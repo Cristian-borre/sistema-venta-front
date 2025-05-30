@@ -1,144 +1,161 @@
 import { useState, useEffect } from "react";
-import api from "../api/axios";
 import { Dialog } from "@headlessui/react";
-import { X } from "lucide-react";
+import { X, Pencil, Trash2, UserPlus, RotateCcw } from "lucide-react";
 import Swal from "sweetalert2";
+import { useApi } from "../hooks/useApi";
 
 const Clientes = () => {
   const [clientes, setClientes] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [lastPage, setLastPage] = useState(1);
-
-  const [form, setForm] = useState({
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [ultimaPagina, setUltimaPagina] = useState(1);
+  const [busqueda, setBusqueda] = useState("");
+  const [formulario, setFormulario] = useState({
     identificacion: "",
     nombre: "",
     email: "",
     telefono: "",
   });
-
+  const [idEditando, setIdEditando] = useState(null);
+  const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
-  const [editId, setEditId] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const { request } = useApi();
 
   useEffect(() => {
-    cargarClientes(1, search);
-    setCurrentPage(1); 
-  }, [search]);
+    const delayDebounce = setTimeout(() => {
+      obtenerClientes(1, busqueda);
+    }, 300);
 
-  const cargarClientes = async (page = 1, searchTerm = "") => {
-    setLoading(true);
+    return () => clearTimeout(delayDebounce);
+  }, [busqueda]);
+
+  useEffect(() => {
+    obtenerClientes(paginaActual, busqueda);
+  }, [paginaActual]);
+
+  const obtenerClientes = async (pagina = 1, filtro = "") => {
+    setCargando(true);
     try {
-      const res = await api.get(`/clientes?page=${page}&search=${searchTerm}`);
+      const res = await request({
+        method: "get",
+        url: `/clientes?page=${pagina}&search=${filtro}`,
+      });
       setClientes(res.data.data);
-      setCurrentPage(res.data.current_page);
-      setLastPage(res.data.last_page);
-    } catch (err) {
-      setError("Error al cargar clientes");
+      setPaginaActual(res.data.current_page);
+      setUltimaPagina(res.data.last_page);
+    } catch {
+      setError("Error al cargar clientes.");
     } finally {
-      setLoading(false);
+      setCargando(false);
     }
   };
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const manejarCambio = (e) =>
+    setFormulario({ ...formulario, [e.target.name]: e.target.value });
 
-  const handleSubmit = async (e) => {
+  const manejarEnvio = async (e) => {
     e.preventDefault();
     setError("");
-    if (!form) {
-      setError("Todos los campos son obligatorios");
+
+    if (
+      !formulario.identificacion ||
+      !formulario.nombre ||
+      !formulario.email ||
+      !formulario.telefono
+    ) {
+      setError("Todos los campos son obligatorios.");
       return;
     }
+
     try {
-      if (editId) {
-        await api.put(`/clientes/${editId}`, form);
-        Swal.fire({
-          title: "Registro Exitosa!",
-          text: `El cliente ha sido creado correctamente.`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
+      if (idEditando) {
+        await request({
+          method: "put",
+          url: `/clientes/${idEditando}`,
+          data: formulario,
         });
-      } else {
-        await api.post("/clientes", form);
-        Swal.fire({
-          title: "Actualizacion Exitosa!",
-          text: `El cliente ha sido actualizado correctamente.`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
-        });
-      }
-      resetForm();
-      cargarClientes();
-    } catch (error) {
-      if (error.response && error.response.data && error.response.data.errors) {
-        const errors = error.response.data.errors;
-
-        const traducirError = (campo, mensajes) => {
-          switch (campo) {
-            case "email":
-              if (mensajes.includes("The email has already been taken.")) {
-                return "El correo electrónico ya está registrado.";
-              }
-              break;
-            case "identificacion":
-              if (
-                mensajes.includes("The identificacion has already been taken.")
-              ) {
-                return "La identificación ya está registrada.";
-              }
-              break;
-            default:
-              return mensajes.join(", ");
-          }
-        };
-
-        const mensajesTraducidos = Object.entries(errors).map(
-          ([campo, mensajes]) => traducirError(campo, mensajes)
+        mostrarAlerta(
+          "Actualización Exitosa",
+          "El cliente fue actualizado correctamente."
         );
-
-        setError(`Error al guardar cliente: ${mensajesTraducidos.join(", ")}`);
       } else {
-        setError("Error al guardar cliente.");
+        await request({
+          method: "post",
+          url: "/clientes",
+          data: formulario,
+        });
+        mostrarAlerta(
+          "Registro Exitoso",
+          "El cliente fue creado correctamente."
+        );
       }
+      limpiarFormulario();
+      obtenerClientes();
+    } catch (err) {
+      manejarErrores(err);
     }
   };
 
-  const resetForm = () => {
-    setForm({
-      identificacion: "",
-      nombre: "",
-      email: "",
-      telefono: "",
-    });
-    setEditId(null);
-    setError("");
-    setModalOpen(false);
+  const manejarErrores = (err) => {
+    if (err.response?.data?.errors) {
+      const errores = err.response.data.errors;
+      const mensajes = Object.entries(errores).map(([campo, mensajes]) => {
+        if (
+          campo === "email" &&
+          mensajes.includes("The email has already been taken.")
+        ) {
+          return "El correo ya está registrado.";
+        }
+        if (
+          campo === "identificacion" &&
+          mensajes.includes("The identificacion has already been taken.")
+        ) {
+          return "La identificación ya está registrada.";
+        }
+        return mensajes.join(", ");
+      });
+      setError(`Error: ${mensajes.join(", ")}`);
+    } else {
+      setError("Error al guardar cliente.");
+    }
   };
 
-  const handleEditar = (cliente) => {
-    setForm({
+  const mostrarAlerta = (titulo, texto) => {
+    Swal.fire({
+      title: titulo,
+      text: texto,
+      icon: "success",
+      confirmButtonText: "Aceptar",
+      customClass: {
+        confirmButton:
+          "bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600",
+      },
+      buttonsStyling: false,
+    });
+  };
+
+  const limpiarFormulario = () => {
+    setFormulario({ identificacion: "", nombre: "", email: "", telefono: "" });
+    setIdEditando(null);
+    setError("");
+    setModalAbierto(false);
+  };
+
+  const editarCliente = (cliente) => {
+    setFormulario({
       identificacion: cliente.identificacion,
       nombre: cliente.nombre,
       email: cliente.email,
       telefono: cliente.telefono,
     });
-    setEditId(cliente.id);
-    setModalOpen(true);
+    setIdEditando(cliente.id);
+    setModalAbierto(true);
   };
 
-  const handleEliminar = async (id) => {
-    const result = await Swal.fire({
-      title: "¿Estás seguro?",
+  const eliminarCliente = async (id) => {
+    const res = await Swal.fire({
+      title: "¿Confirmar acción?",
+      text: "Esta acción cambiará el estado del cliente.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Sí, confirmar",
@@ -152,145 +169,127 @@ const Clientes = () => {
       buttonsStyling: false,
     });
 
-    if (result.isConfirmed) {
+    if (res.isConfirmed) {
       try {
-        await api.delete(`/clientes/${id}`);
-        cargarClientes();
-        Swal.fire({
-          text: `El estado del cliente ha sido modificado`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
+        await request({
+          method: "delete",
+          url: `/clientes/${id}`,
         });
+        obtenerClientes();
+        mostrarAlerta("Estado modificado", "El cliente ha sido actualizado.");
       } catch {
-        Swal.fire({
-          title: "Error",
-          text: `No se pudo cambiar el estado del cliente`,
-          icon: "error",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
-        });
+        mostrarAlerta("Error", "No se pudo modificar el estado del cliente.");
       }
     }
   };
 
-  const clientesFiltrados = clientes.filter(
-    (p) =>
-      p.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      p.identificacion
-        .toString()
-        .trim()
-        .toLowerCase()
-        .includes(search.toLowerCase())
-  );
-
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Clientes</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-zinc-800">Clientes</h1>
         <button
-          onClick={() => setModalOpen(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+          onClick={() => setModalAbierto(true)}
+          className="bg-emerald-500 text-white px-4 py-2 rounded-full hover:bg-emerald-600 flex items-center gap-2"
         >
-          + Agregar Cliente
+          <UserPlus size={16} /> Agregar Cliente
         </button>
       </div>
 
       <input
         type="text"
         placeholder="Buscar cliente..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full mb-4 px-4 py-2 border border-gray-300 rounded"
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        className="w-full mb-6 px-4 py-2 border border-zinc-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
       />
 
-      {loading ? (
-        <p>Cargando clientes...</p>
-      ) : clientesFiltrados.length === 0 ? (
-        <p>No hay clientes registrados.</p>
+      {cargando ? (
+        <p className="text-zinc-500">Cargando clientes...</p>
+      ) : clientes.length === 0 ? (
+        <p className="text-zinc-500">No hay clientes encontrados.</p>
       ) : (
         <>
-          <table className="w-full border-collapse bg-white rounded shadow">
+          <table className="w-full text-sm border-separate border-spacing-y-2">
             <thead>
-              <tr className="bg-indigo-100 text-indigo-700">
-                <th className="border px-4 py-2 text-left">Identificacion</th>
-                <th className="border px-4 py-2 text-left">Nombre</th>
-                <th className="border px-4 py-2 text-right">Correo</th>
-                <th className="border px-4 py-2 text-right">Telefono</th>
-                <th className="border px-4 py-2 text-center">Estado</th>
-                <th className="border px-4 py-2 text-center">Acciones</th>
+              <tr className="text-zinc-500 uppercase text-xs">
+                <th className="text-left px-4 py-2">Identificación</th>
+                <th className="text-left px-4 py-2">Nombre</th>
+                <th className="text-right px-4 py-2">Correo</th>
+                <th className="text-right px-4 py-2">Teléfono</th>
+                <th className="text-center px-4 py-2">Estado</th>
+                <th className="text-center px-4 py-2">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {clientesFiltrados.map((p) => (
-                <tr key={p.id} className="hover:bg-indigo-50">
-                  <td className="border px-4 py-2">{p.identificacion}</td>
-                  <td className="border px-4 py-2">
-                    {p.nombre
-                      ? p.nombre.length > 15
-                        ? p.nombre.substring(0, 15) + "..."
-                        : p.nombre
-                      : "-"}
+              {clientes.map((cliente) => (
+                <tr key={cliente.id} className="bg-white rounded-xl shadow-sm">
+                  <td className="px-4 py-3">{cliente.identificacion}</td>
+                  <td className="px-4 py-3">
+                    {cliente.nombre?.length > 20
+                      ? cliente.nombre.slice(0, 20) + "..."
+                      : cliente.nombre || "-"}
                   </td>
-                  <td className="border px-4 py-2 text-right">{p.email}</td>
-                  <td className="border px-4 py-2 text-right">{p.telefono}</td>
-                  <td className="border px-4 py-2 text-center capitalize">
-                    {p.estado ? "Activo" : "Inactivo"}
-                  </td>
-                  <td className="border px-4 py-2 text-center space-x-2">
-                    <button
-                      onClick={() => handleEditar(p)}
-                      className="text-white rounded-md py-1 px-3 bg-indigo-600 hover:bg-indigo-800"
+                  <td className="px-4 py-3 text-right">{cliente.email}</td>
+                  <td className="px-4 py-3 text-right">{cliente.telefono}</td>
+                  <td className="px-4 py-3 text-center capitalize">
+                    <span
+                      className={`text-sm font-medium ${
+                        cliente.estado ? "text-emerald-600" : "text-red-500"
+                      }`}
                     >
-                      Editar
+                      {cliente.estado ? "Activo" : "Inactivo"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center flex justify-center gap-2">
+                    <button
+                      onClick={() => editarCliente(cliente)}
+                      className="p-2 hover:bg-zinc-100 rounded-full"
+                    >
+                      <Pencil size={16} className="text-zinc-500" />
                     </button>
                     <button
-                      onClick={() => handleEliminar(p.id)}
-                      className="text-white rounded-md py-1 px-3 bg-red-600 hover:bg-red-800"
+                      onClick={() => eliminarCliente(cliente.id)}
+                      className="p-2 hover:bg-zinc-100 rounded-full"
                     >
-                      {p.estado ? "Desactivar" : "Activar"}
+                      {cliente.estado === 1 ? (
+                        <Trash2 size={16} className="text-red-500" />
+                      ) : (
+                        <RotateCcw size={16} className="text-green-500" />
+                      )}
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="flex justify-center mt-4 space-x-2">
+
+          <div className="flex justify-center mt-6 gap-2">
             <button
-              disabled={currentPage === 1}
-              onClick={() => cargarClientes(currentPage - 1, search)}
-              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+              disabled={paginaActual === 1}
+              onClick={() => obtenerClientes(paginaActual - 1, busqueda)}
+              className="px-3 py-1 bg-zinc-200 rounded disabled:opacity-50"
             >
               Anterior
             </button>
-
-            {[...Array(lastPage)].map((_, i) => {
-              const page = i + 1;
-              return (
+            {Array.from({ length: ultimaPagina }, (_, i) => i + 1).map(
+              (pagina) => (
                 <button
-                  key={page}
-                  onClick={() => cargarClientes(page, search)}
+                  key={pagina}
+                  onClick={() => obtenerClientes(pagina, busqueda)}
                   className={`px-3 py-1 rounded ${
-                    page === currentPage
-                      ? "bg-indigo-600 text-white"
-                      : "bg-gray-200 hover:bg-gray-300"
+                    pagina === paginaActual
+                      ? "bg-emerald-500 text-white"
+                      : "bg-zinc-200 hover:bg-zinc-300"
                   }`}
                 >
-                  {page}
+                  {pagina}
                 </button>
-              );
-            })}
-
+              )
+            )}
             <button
-              disabled={currentPage === lastPage}
-              onClick={() => cargarClientes(currentPage + 1, search)}
-              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+              disabled={paginaActual === ultimaPagina}
+              onClick={() => obtenerClientes(paginaActual + 1, busqueda)}
+              className="px-3 py-1 bg-zinc-200 rounded disabled:opacity-50"
             >
               Siguiente
             </button>
@@ -299,96 +298,85 @@ const Clientes = () => {
       )}
 
       <Dialog
-        open={modalOpen}
-        onClose={resetForm}
-        className="fixed z-50 inset-0 overflow-y-auto bg-black/55"
+        open={modalAbierto}
+        onClose={limpiarFormulario}
+        className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
       >
         <div className="flex items-center justify-center min-h-screen px-4">
-          <Dialog.Panel className="bg-white p-6 rounded-md shadow-xl w-auto relative">
+          <Dialog.Panel className="bg-white/90 backdrop-blur-lg p-6 rounded-2xl shadow-2xl relative w-full max-w-xl">
             <button
-              onClick={resetForm}
-              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={limpiarFormulario}
+              className="absolute top-3 right-3 text-zinc-400 hover:text-zinc-700"
             >
               <X />
             </button>
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              {editId ? "Editar Cliente" : "Agregar Cliente"}
+
+            <Dialog.Title className="text-lg font-bold mb-4 text-zinc-700">
+              {idEditando ? "Editar Cliente" : "Agregar Cliente"}
             </Dialog.Title>
 
             {error && (
-              <div className="mb-4 bg-red-400 px-3 py-2 rounded-md border border-red-800 text-red-900 text-sm">
+              <div className="mb-4 text-sm text-red-800 bg-red-200 px-3 py-2 rounded">
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex gap-5">
+            <form onSubmit={manejarEnvio} className="space-y-4">
+              <div className="flex gap-4">
                 <input
                   type="number"
                   name="identificacion"
-                  placeholder="Identificacion"
-                  value={form.identificacion}
-                  onChange={handleChange}
-                  className={`flex-1 px-4 py-2 border rounded 
-                    ${
-                      editId
-                        ? "bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed"
-                        : "border-gray-300"
-                    }
-                  `}
-                  disabled={!!editId}
+                  placeholder="Identificación"
+                  value={formulario.identificacion}
+                  onChange={manejarCambio}
+                  disabled={!!idEditando}
+                  className={`w-full px-4 py-2 rounded-xl border ${
+                    idEditando ? "bg-zinc-100 text-zinc-400" : "border-zinc-300"
+                  }`}
                 />
-
                 <input
                   type="text"
                   name="nombre"
                   placeholder="Nombre"
-                  value={form.nombre}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  value={formulario.nombre}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
               </div>
-
-              <div className="flex gap-5">
+              <div className="flex gap-4">
                 <input
                   type="email"
                   name="email"
-                  placeholder="Correo"
-                  value={form.email}
-                  onChange={handleChange}
-                  className={`flex-1 px-4 py-2 border rounded 
-                    ${
-                      editId
-                        ? "bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed"
-                        : "border-gray-300"
-                    }
-                  `}
-                  disabled={!!editId}
+                  placeholder="Correo electrónico"
+                  value={formulario.email}
+                  onChange={manejarCambio}
+                  disabled={!!idEditando}
+                  className={`w-full px-4 py-2 rounded-xl border ${
+                    idEditando ? "bg-zinc-100 text-zinc-400" : "border-zinc-300"
+                  }`}
                 />
-
                 <input
                   type="number"
                   name="telefono"
-                  placeholder="Telefono"
-                  value={form.telefono}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  placeholder="Teléfono"
+                  value={formulario.telefono}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
               </div>
-
-              <div className="flex justify-end space-x-2">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                  onClick={limpiarFormulario}
+                  className="px-4 py-2 bg-zinc-200 rounded hover:bg-zinc-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                  className="px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600"
                 >
-                  {editId ? "Actualizar" : "Agregar"}
+                  {idEditando ? "Actualizar" : "Agregar"}
                 </button>
               </div>
             </form>

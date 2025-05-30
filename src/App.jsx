@@ -41,7 +41,10 @@ function AppRoutes() {
           <Route path="ventas/:id" element={<DetalleVenta />} />
         </Route>
 
-        {/* <Route path="*" element={<NotFound />} /> */}
+        <Route
+          path="*"
+          element={!user ? <Login /> : <Navigate to="/" replace />}
+        />
       </Routes>
     </>
   );

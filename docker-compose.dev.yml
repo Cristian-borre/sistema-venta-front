@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  vite-dev:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
+
+  react-vite-app:
+    image: react-vite-app
+    ports:
+      - "3000:80"

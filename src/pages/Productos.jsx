@@ -1,117 +1,163 @@
 import { useState, useEffect } from "react";
-import api from "../api/axios";
 import { Dialog } from "@headlessui/react";
-import { X } from "lucide-react";
+import { X, Pencil, Trash2, PackagePlus, RotateCcw } from "lucide-react";
 import Swal from "sweetalert2";
+import { useApi } from "../hooks/useApi";
 
 const Productos = () => {
   const [productos, setProductos] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [lastPage, setLastPage] = useState(1);
-
-  const [form, setForm] = useState({
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [ultimaPagina, setUltimaPagina] = useState(1);
+  const [busqueda, setBusqueda] = useState("");
+  const [formulario, setFormulario] = useState({
     codigo: "",
     nombre: "",
     precio: "",
     stock: "",
     descripcion: "",
   });
-
+  const [idEditando, setIdEditando] = useState(null);
+  const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
-  const [editId, setEditId] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const { request } = useApi();
 
   useEffect(() => {
-    cargarProductos();
-  }, []);
+    obtenerProductos(1, busqueda);
+    setPaginaActual(1);
+  }, [busqueda]);
 
-  const cargarProductos = async (page = 1) => {
-    setLoading(true);
+  const obtenerProductos = async (pagina = 1, filtro = "") => {
+    setCargando(true);
     try {
-      const res = await api.get(`/productos?page=${page}`);
+      const res = await request({
+        method: "get",
+        url: `/productos?page=${pagina}&search=${filtro}`,
+      });
       setProductos(res.data.data);
-      setCurrentPage(res.data.current_page);
-      setLastPage(res.data.last_page);
+      setPaginaActual(res.data.current_page);
+      setUltimaPagina(res.data.last_page);
     } catch (err) {
       setError("Error al cargar productos");
     } finally {
-      setLoading(false);
+      setCargando(false);
     }
   };
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const manejarCambio = (e) =>
+    setFormulario({ ...formulario, [e.target.name]: e.target.value });
 
-  const handleSubmit = async (e) => {
+  const manejarEnvio = async (e) => {
     e.preventDefault();
     setError("");
-    if (!form) {
-      setError("Todos los campos son obligatorios");
+
+    if (
+      !formulario.codigo ||
+      !formulario.nombre ||
+      !formulario.precio ||
+      !formulario.stock ||
+      !formulario.descripcion
+    ) {
+      setError("Todos los campos son obligatorios.");
       return;
     }
+
     try {
-      if (editId) {
-        await api.put(`/productos/${editId}`, form);
-        Swal.fire({
-          title: "Registro Exitoso!",
-          text: `El producto ha sido creado correctamente.`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
+      if (idEditando) {
+        await request({
+          method: "put",
+          url: `/productos/${idEditando}`,
+          data: formulario,
         });
+        mostrarAlerta(
+          "Actualización Exitosa",
+          "El producto fue actualizado correctamente."
+        );
       } else {
-        await api.post("/productos", form);
-        Swal.fire({
-          title: "Actualizacion Exitosa!",
-          text: `El producto ha sido actualizado correctamente.`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
+        await request({
+          method: "post",
+          url: "/productos",
+          data: formulario,
         });
+        mostrarAlerta(
+          "Registro Exitoso",
+          "El producto fue creado correctamente."
+        );
       }
-      resetForm();
-      cargarProductos();
+      obtenerProductos();
+      limpiarFormulario();
     } catch {
-      setError("Error al guardar producto: Este codigo ya esta registrado.");
+      manejarErrores(err);
     }
   };
 
-  const resetForm = () => {
-    setForm({
+  const manejarErrores = (err) => {
+    if (err.response?.data?.errors) {
+      const errores = err.response.data.errors;
+      const mensajes = Object.entries(errores).map(([campo, mensajes]) => {
+        if (
+          campo === "email" &&
+          mensajes.includes("The email has already been taken.")
+        ) {
+          return "El correo ya está registrado.";
+        }
+        if (
+          campo === "identificacion" &&
+          mensajes.includes("The identificacion has already been taken.")
+        ) {
+          return "La identificación ya está registrada.";
+        }
+        return mensajes.join(", ");
+      });
+      setError(`Error: ${mensajes.join(", ")}`);
+    } else {
+      setError("Error al guardar cliente.");
+    }
+  };
+
+  const mostrarAlerta = (titulo, texto) => {
+    Swal.fire({
+      title: titulo,
+      text: texto,
+      icon: "success",
+      confirmButtonText: "Aceptar",
+      customClass: {
+        confirmButton:
+          "bg-emerald-500 text-white px-4 py-2 rounded hover:bg-emerald-600",
+      },
+      buttonsStyling: false,
+    });
+  };
+
+  const limpiarFormulario = () => {
+    setFormulario({
       codigo: "",
       nombre: "",
       precio: "",
       stock: "",
       descripcion: "",
     });
-    setEditId(null);
+    setIdEditando(null);
     setError("");
-    setModalOpen(false);
+    setModalAbierto(false);
   };
 
-  const handleEditar = (producto) => {
-    setForm({
+  const editarProducto = (producto) => {
+    setFormulario({
       codigo: producto.codigo,
       nombre: producto.nombre,
       precio: producto.precio,
       stock: producto.stock,
       descripcion: producto.descripcion,
     });
-    setEditId(producto.id);
-    setModalOpen(true);
+    setIdEditando(producto.id);
+    setModalAbierto(true);
   };
 
-  const handleEliminar = async (id) => {
+  const eliminarProducto = async (id) => {
     const result = await Swal.fire({
-      title: "¿Estás seguro?",
+      title: "¿Confirmar acción?",
+      text: "Esta acción cambiará el estado del producto.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Sí, confirmar",
@@ -127,147 +173,140 @@ const Productos = () => {
 
     if (result.isConfirmed) {
       try {
-        await api.delete(`/productos/${id}`);
-        cargarProductos();
-        Swal.fire({
-          text: `El estado del cliente ha sido modificado`,
-          icon: "success",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
+        await request({
+          method: "delete",
+          url: `/productos/${id}`,
         });
+        obtenerProductos();
+        mostrarAlerta("Estado modificado", "El producto ha sido actualizado.");
       } catch {
-        Swal.fire({
-          title: "Error",
-          text: `No se pudo cambiar el estado del cliente`,
-          icon: "error",
-          customClass: {
-            confirmButton:
-              "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
-          },
-          buttonsStyling: false,
-        });
+        mostrarAlerta("Error", "No se pudo modificar el estado del producto.");
       }
     }
   };
 
   const productosFiltrados = productos.filter(
     (p) =>
-      p.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      p.codigo.toLowerCase().includes(search.toLowerCase())
+      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+      p.codigo.toLowerCase().includes(busqueda.toLowerCase())
   );
 
   return (
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Productos</h1>
+        <h1 className="text-2xl font-bold text-zinc-800">Productos</h1>
         <button
-          onClick={() => setModalOpen(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+          onClick={() => setModalAbierto(true)}
+          className="bg-emerald-500 text-white px-4 py-2 rounded-full hover:bg-emerald-600 flex items-center gap-2"
         >
-          + Agregar Producto
+          <PackagePlus size={16} /> Agregar Producto
         </button>
       </div>
 
       <input
         type="text"
         placeholder="Buscar producto..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full mb-4 px-4 py-2 border border-gray-300 rounded"
+        value={busqueda}
+        onChange={(e) => setBusqueda(e.target.value)}
+        className="w-full mb-6 px-4 py-2 border border-zinc-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
       />
 
-      {loading ? (
-        <p>Cargando productos...</p>
+      {cargando ? (
+        <p className="text-zinc-500">Cargando productos...</p>
       ) : productosFiltrados.length === 0 ? (
-        <p>No hay productos registrados.</p>
+        <p className="text-zinc-500">No hay productos encontrados.</p>
       ) : (
         <>
-          <table className="w-full border-collapse bg-white rounded shadow">
+          <table className="w-full text-sm border-separate border-spacing-y-2">
             <thead>
-              <tr className="bg-indigo-100 text-indigo-700">
-                <th className="border px-4 py-2 text-left">Codigo</th>
-                <th className="border px-4 py-2 text-left">Nombre</th>
-                <th className="border px-4 py-2 text-right">Precio</th>
-                <th className="border px-4 py-2 text-right">Stock</th>
-                <th className="border px-4 py-2 text-left">Descripción</th>
-                <th className="border px-4 py-2 text-center">Estado</th>
-                <th className="border px-4 py-2 text-center">Acciones</th>
+              <tr className="text-zinc-500 uppercase text-xs">
+                <th className="px-4 py-2 text-left">Codigo</th>
+                <th className="px-4 py-2 text-left">Nombre</th>
+                <th className="px-4 py-2 text-right">Precio</th>
+                <th className="px-4 py-2 text-right">Stock</th>
+                <th className="px-4 py-2 text-left">Descripción</th>
+                <th className="px-4 py-2 text-center">Estado</th>
+                <th className="px-4 py-2 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {productosFiltrados.map((p) => (
-                <tr key={p.id} className="hover:bg-indigo-50">
-                  <td className="border px-4 py-2">{p.codigo}</td>
-                  <td className="border px-4 py-2">
-                    {p.nombre
-                      ? p.nombre.length > 15
-                        ? p.nombre.substring(0, 15) + "..."
-                        : p.nombre
+              {productosFiltrados.map((producto) => (
+                <tr key={producto.id} className="bg-white rounded-xl shadow-sm">
+                  <td className="px-4 py-2">{producto.codigo}</td>
+                  <td className="px-4 py-2">
+                    {producto.nombre
+                      ? producto.nombre.length > 15
+                        ? producto.nombre.substring(0, 15) + "..."
+                        : producto.nombre
                       : "-"}
                   </td>
-                  <td className="border px-4 py-2 text-right">${p.precio}</td>
-                  <td className="border px-4 py-2 text-right">{p.stock}</td>
-                  <td className="border px-4 py-2">
-                    {p.descripcion
-                      ? p.descripcion.length > 30
-                        ? p.descripcion.substring(0, 30) + "..."
-                        : p.descripcion
+                  <td className="px-4 py-2 text-right">${producto.precio}</td>
+                  <td className="px-4 py-2 text-right">{producto.stock}</td>
+                  <td className="px-4 py-2">
+                    {producto.descripcion
+                      ? producto.descripcion.length > 30
+                        ? producto.descripcion.substring(0, 30) + "..."
+                        : producto.descripcion
                       : "-"}
                   </td>
-                  <td className="border px-4 py-2 text-center capitalize">
-                    {p.estado ? "Activo" : "Inactivo"}
-                  </td>
-                  <td className="border px-4 py-2 text-center space-x-2">
-                    <button
-                      onClick={() => handleEditar(p)}
-                      className="text-white rounded-md py-1 px-3 bg-indigo-600 hover:bg-indigo-800"
+                  <td className="px-4 py-3 text-center capitalize">
+                    <span
+                      className={`text-sm font-medium ${
+                        producto.estado ? "text-emerald-600" : "text-red-500"
+                      }`}
                     >
-                      Editar
+                      {producto.estado ? "Activo" : "Inactivo"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-center space-x-2">
+                    <button
+                      onClick={() => editarProducto(producto)}
+                      className="p-2 hover:bg-zinc-100 rounded-full"
+                    >
+                      <Pencil size={16} className="text-zinc-500" />
                     </button>
                     <button
-                      onClick={() => handleEliminar(p.id)}
-                      className="text-white rounded-md py-1 px-3 bg-red-600 hover:bg-red-800"
+                      onClick={() => eliminarProducto(producto.id)}
+                      className="p-2 hover:bg-zinc-100 rounded-full"
                     >
-                      {p.estado ? "Desactivar" : "Activar"}
+                      {producto.estado === 1 ? (
+                        <Trash2 size={16} className="text-red-500" />
+                      ) : (
+                        <RotateCcw size={16} className="text-green-500" />
+                      )}
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="flex justify-center mt-4 space-x-2">
+          <div className="flex justify-center mt-6 gap-2">
             <button
-              disabled={currentPage === 1}
-              onClick={() => cargarProductos(currentPage - 1)}
-              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+              disabled={paginaActual === 1}
+              onClick={() => obtenerProductos(paginaActual - 1, busqueda)}
+              className="px-3 py-1 bg-zinc-200 rounded disabled:opacity-50"
             >
               Anterior
             </button>
-
-            {[...Array(lastPage)].map((_, i) => {
-              const page = i + 1;
-              return (
+            {Array.from({ length: ultimaPagina }, (_, i) => i + 1).map(
+              (pagina) => (
                 <button
-                  key={page}
-                  onClick={() => cargarProductos(page)}
+                  key={pagina}
+                  onClick={() => obtenerProductos(pagina, busqueda)}
                   className={`px-3 py-1 rounded ${
-                    page === currentPage
-                      ? "bg-indigo-600 text-white"
-                      : "bg-gray-200 hover:bg-gray-300"
+                    pagina === paginaActual
+                      ? "bg-emerald-500 text-white"
+                      : "bg-zinc-200 hover:bg-zinc-300"
                   }`}
                 >
-                  {page}
+                  {pagina}
                 </button>
-              );
-            })}
-
+              )
+            )}
             <button
-              disabled={currentPage === lastPage}
-              onClick={() => cargarProductos(currentPage + 1)}
-              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+              disabled={paginaActual === ultimaPagina}
+              onClick={() => obtenerProductos(paginaActual + 1, busqueda)}
+              className="px-3 py-1 bg-zinc-200 rounded disabled:opacity-50"
             >
               Siguiente
             </button>
@@ -276,53 +315,49 @@ const Productos = () => {
       )}
 
       <Dialog
-        open={modalOpen}
-        onClose={resetForm}
-        className="fixed z-50 inset-0 overflow-y-auto bg-black/55"
+        open={modalAbierto}
+        onClose={limpiarFormulario}
+        className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
       >
         <div className="flex items-center justify-center min-h-screen px-4">
-          <Dialog.Panel className="bg-white p-6 rounded-md shadow-xl w-auto relative">
+          <Dialog.Panel className="bg-white/90 backdrop-blur-lg p-6 rounded-2xl shadow-2xl relative w-full max-w-xl">
             <button
-              onClick={resetForm}
-              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={limpiarFormulario}
+              className="absolute top-3 right-3 text-zinc-400 hover:text-zinc-700"
             >
               <X />
             </button>
-            <Dialog.Title className="text-lg font-semibold mb-4">
-              {editId ? "Editar Producto" : "Agregar Producto"}
+            <Dialog.Title className="text-lg font-bold mb-4 text-zinc-700">
+              {idEditando ? "Editar Cliente" : "Agregar Cliente"}
             </Dialog.Title>
 
             {error && (
-              <div className="mb-4 bg-red-400 px-3 py-2 rounded-md border border-red-800 text-red-900 text-sm">
+              <div className="mb-4 text-sm text-red-800 bg-red-200 px-3 py-2 rounded">
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={manejarEnvio} className="space-y-4">
               <div className="flex gap-5">
                 <input
                   type="text"
                   name="codigo"
                   placeholder="Codigo"
-                  value={form.codigo}
-                  onChange={handleChange}
-                  className={`flex-1 px-4 py-2 border rounded 
-                    ${
-                      editId
-                        ? "bg-gray-200 text-gray-500 border-gray-300 cursor-not-allowed"
-                        : "border-gray-300"
-                    }
-                  `}
-                  disabled={!!editId}
+                  value={formulario.codigo}
+                  onChange={manejarCambio}
+                  disabled={!!idEditando}
+                  className={`w-full px-4 py-2 rounded-xl border ${
+                    idEditando ? "bg-zinc-100 text-zinc-400" : "border-zinc-300"
+                  }`}
                 />
 
                 <input
                   type="text"
                   name="nombre"
                   placeholder="Nombre"
-                  value={form.nombre}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  value={formulario.nombre}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
               </div>
               <div className="flex gap-5">
@@ -330,18 +365,18 @@ const Productos = () => {
                   type="text"
                   name="descripcion"
                   placeholder="Descripción"
-                  value={form.descripcion}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  value={formulario.descripcion}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
 
                 <input
                   type="number"
                   name="stock"
                   placeholder="Stock"
-                  value={form.stock}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  value={formulario.stock}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
               </div>
 
@@ -350,25 +385,25 @@ const Productos = () => {
                   type="number"
                   name="precio"
                   placeholder="Precio"
-                  value={form.precio}
-                  onChange={handleChange}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded"
+                  value={formulario.precio}
+                  onChange={manejarCambio}
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-xl"
                 />
               </div>
 
               <div className="flex justify-end space-x-2">
                 <button
                   type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                  onClick={limpiarFormulario}
+                  className="px-4 py-2 bg-zinc-200 rounded hover:bg-zinc-300"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                  className="px-4 py-2 bg-emerald-500 text-white rounded hover:bg-emerald-600"
                 >
-                  {editId ? "Actualizar" : "Agregar"}
+                  {idEditando ? "Actualizar" : "Agregar"}
                 </button>
               </div>
             </form>

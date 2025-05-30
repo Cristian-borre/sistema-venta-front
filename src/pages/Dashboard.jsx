@@ -1,19 +1,48 @@
 import { useEffect, useState } from "react";
-import api from "../api/axios";
+import { useApi } from "../hooks/useApi";
+
+import {
+  ShoppingBagIcon,
+  UserGroupIcon,
+  CurrencyDollarIcon,
+  ChartBarIcon,
+} from "@heroicons/react/24/outline";
+
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  BarChart,
+  Bar,
+} from "recharts";
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [ventasRecientes, setVentasRecientes] = useState([]);
   const [productosPopulares, setProductosPopulares] = useState([]);
+  const { request } = useApi();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await api.get("/dashboard/estadisticas");
+        const res = await request({
+          method: "get",
+          url: "/dashboard/estadisticas",
+        });
         setStats(res.data);
-        const resVentas = await api.get("/dashboard/ultimas-ventas");
+        const resVentas = await request({
+          method: "get",
+          url: "/dashboard/ultimas-ventas",
+        });
         setVentasRecientes(resVentas.data);
-        const resPopulares = await api.get("/dashboard/productos-populares");
+        const resPopulares = await request({
+          method: "get",
+          url: "/dashboard/productos-populares",
+        });
         setProductosPopulares(resPopulares.data);
       } catch (error) {
         console.error("Error al cargar datos del dashboard:", error);
@@ -23,15 +52,36 @@ const Dashboard = () => {
     fetchData();
   }, []);
 
-  return (
-    <div className="max-w-7xl mx-auto p-6">
-      <h1 className="text-3xl font-semibold mb-6">Dashboard</h1>
+  const dataVentas = ventasRecientes.map((venta) => ({
+    fecha: new Date(venta.fecha).toLocaleDateString("es-CO", {
+      day: "2-digit",
+      month: "short",
+    }),
+    total: venta.total,
+  }));
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card title="Productos" value={stats?.productos || 0} />
-        <Card title="Clientes" value={stats?.clientes || 0} />
-        <Card title="Ventas" value={stats?.ventas || 0} />
+  return (
+    <div className="max-w-7xl mx-auto px-6 py-10">
+      <h1 className="text-4xl font-extrabold text-gray-900 mb-10 tracking-tight">
+        Dashboard
+      </h1>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+        <Card
+          title="Productos"
+          value={stats?.productos || 0}
+          icon={<ShoppingBagIcon className="h-10 w-10 text-indigo-500" />}
+        />
+        <Card
+          title="Clientes"
+          value={stats?.clientes || 0}
+          icon={<UserGroupIcon className="h-10 w-10 text-green-500" />}
+        />
+        <Card
+          title="Ventas"
+          value={stats?.ventas || 0}
+          icon={<ChartBarIcon className="h-10 w-10 text-yellow-500" />}
+        />
         <Card
           title="Ingresos"
           value={
@@ -40,28 +90,34 @@ const Dashboard = () => {
               currency: "COP",
             }) || "$0"
           }
+          icon={<CurrencyDollarIcon className="h-10 w-10 text-red-500" />}
         />
       </div>
 
-      {/* Sección de tabla y popular products */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Últimas Ventas</h2>
-          <div className="bg-white rounded shadow p-4">
+      <div className="grid md:grid-cols-3 gap-8">
+        <section className="bg-white rounded-2xl shadow-lg p-6 col-span-2">
+          <h2 className="text-xl font-semibold text-gray-800 mb-6">
+            Últimas Ventas
+          </h2>
+
+          <div className="overflow-x-auto mb-6">
             <table className="w-full text-sm">
-              <thead className="text-left text-gray-600 border-b">
+              <thead className="text-gray-500 border-b">
                 <tr>
-                  <th>Cliente</th>
-                  <th>Fecha</th>
-                  <th className="text-right">Total</th>
+                  <th className="pb-2 text-left">Cliente</th>
+                  <th className="pb-2 text-left">Fecha</th>
+                  <th className="pb-2 text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {ventasRecientes.map((venta) => (
-                  <tr key={venta.id} className="border-b hover:bg-gray-50">
-                    <td>{venta.cliente?.nombre}</td>
-                    <td>{venta.fecha}</td>
-                    <td className="text-right">
+                  <tr
+                    key={venta.id}
+                    className="border-b last:border-0 hover:bg-gray-100 transition"
+                  >
+                    <td className="py-2">{venta.cliente?.nombre}</td>
+                    <td>{new Date(venta.fecha).toLocaleDateString("es-CO")}</td>
+                    <td className="text-right font-semibold text-indigo-700">
                       {venta.total.toLocaleString("es-CO", {
                         style: "currency",
                         currency: "COP",
@@ -72,33 +128,82 @@ const Dashboard = () => {
               </tbody>
             </table>
           </div>
-        </div>
 
-        <div>
-          <h2 className="text-xl font-semibold mb-2">Productos más Vendidos</h2>
-          <div className="bg-white rounded shadow p-4">
-            <ul className="space-y-2">
-              {productosPopulares.map((prod) => (
-                <li
-                  key={prod.id}
-                  className="flex justify-between border-b pb-1 last:border-0"
-                >
-                  <span>{prod.nombre}</span>
-                  <span className="text-sm text-gray-600">{prod.vendidos} vendidos</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={dataVentas} margin={{ top: 10, right: 30, bottom: 0, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#ddd" />
+              <XAxis dataKey="fecha" stroke="#888" />
+              <YAxis
+                stroke="#888"
+                tickFormatter={(value) =>
+                  value.toLocaleString("es-CO", {
+                    style: "currency",
+                    currency: "COP",
+                    maximumFractionDigits: 0,
+                  })
+                }
+              />
+              <Tooltip
+                formatter={(value) =>
+                  value.toLocaleString("es-CO", {
+                    style: "currency",
+                    currency: "COP",
+                  })
+                }
+              />
+              <Line
+                type="monotone"
+                dataKey="total"
+                stroke="#6366F1"
+                strokeWidth={3}
+                dot={{ r: 5 }}
+                activeDot={{ r: 7 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </section>
+
+        <section className="bg-white rounded-2xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">
+            Productos más Vendidos
+          </h2>
+
+          <ul className="divide-y divide-gray-200 max-h-[200px] overflow-y-auto mb-4">
+            {productosPopulares.map((prod) => (
+              <li
+                key={prod.id}
+                className="py-3 flex justify-between items-center hover:bg-indigo-50 rounded-md px-3 transition"
+              >
+                <span className="font-medium text-gray-700">{prod.nombre}</span>
+                <span className="text-sm text-indigo-600 font-semibold">
+                  {prod.vendidos} vendidos
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={productosPopulares} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <XAxis dataKey="nombre" tick={{ fontSize: 12 }} interval={0} angle={-30} textAnchor="end" height={60} />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="vendidos" fill="#6366F1" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </section>
       </div>
     </div>
   );
 };
 
-const Card = ({ title, value }) => (
-  <div className="bg-white shadow rounded p-4">
-    <p className="text-sm text-gray-500">{title}</p>
-    <p className="text-xl font-bold text-gray-800">{value}</p>
+const Card = ({ title, value, icon }) => (
+  <div className="bg-white rounded-2xl p-5 shadow-lg flex items-center space-x-5 hover:shadow-xl transition cursor-default select-none">
+    <div className="p-3 bg-indigo-100 rounded-lg">{icon}</div>
+    <div>
+      <p className="text-sm text-gray-500">{title}</p>
+      <p className="text-3xl font-extrabold text-gray-900">{value}</p>
+    </div>
   </div>
 );
 

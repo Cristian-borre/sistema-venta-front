@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import api from "../api/axios";
 import Swal from "sweetalert2";
+import debounce from "lodash.debounce";
+import { useApi } from "../hooks/useApi";
 
 const CrearVenta = () => {
   const [clientes, setClientes] = useState([]);
@@ -10,37 +11,65 @@ const CrearVenta = () => {
   const [busquedaCliente, setBusquedaCliente] = useState("");
 
   const [productoId, setProductoId] = useState("");
+  const [productoSeleccionado, setProductoSeleccionado] = useState(null);
   const [busquedaProducto, setBusquedaProducto] = useState("");
 
   const [items, setItems] = useState([]);
   const [cantidad, setCantidad] = useState(1);
   const [total, setTotal] = useState(0);
   const [mensaje, setMensaje] = useState("");
-
-  useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        const resClientes = await api.get("/clientes");
-        setClientes(resClientes.data.data);
-        const resProductos = await api.get("/productos");
-        setProductos(resProductos.data.data);
-      } catch (error) {
-        console.error("Error al cargar datos:", error);
-      }
-    };
-    cargarDatos();
-  }, []);
+  const { request } = useApi();
 
   useEffect(() => {
     const nuevoTotal = items.reduce((acc, item) => acc + item.subtotal, 0);
     setTotal(nuevoTotal);
   }, [items]);
 
-  const agregarItem = () => {
-    if (!productoId || cantidad <= 0) return;
+  const buscarClientes = debounce(async (search) => {
+    try {
+      const res = await request({
+        method: "get",
+        url: "/clientes",
+        params: { search },
+      });
+      setClientes(res.data.data);
+    } catch (err) {
+      console.error("Error buscando clientes", err);
+    }
+  }, 300);
 
-    const producto = productos.find((p) => p.id === parseInt(productoId));
-    if (!producto) return;
+  useEffect(() => {
+    if (busquedaCliente.length >= 2) {
+      buscarClientes(busquedaCliente);
+    }
+  }, [busquedaCliente]);
+
+  const buscarProductos = debounce(async (search) => {
+    try {
+      const res = await request({
+        method: "get",
+        url: "/productos",
+        params: { search },
+      });
+      setProductos(res.data.data);
+    } catch (err) {
+      console.error("Error buscando productos", err);
+    }
+  }, 300);
+
+  useEffect(() => {
+    if (busquedaProducto.length >= 2) {
+      buscarProductos(busquedaProducto);
+    }
+  }, [busquedaProducto]);
+
+  const agregarItem = () => {
+    if (!productoSeleccionado || cantidad <= 0) {
+      setMensaje("Debes seleccionar un producto válido y una cantidad mayor a cero.");
+      return;
+    }
+
+    const producto = productoSeleccionado;
 
     const itemExistente = items.find((item) => item.id === producto.id);
     const cantidadTotal = (itemExistente?.cantidad || 0) + cantidad;
@@ -50,32 +79,31 @@ const CrearVenta = () => {
         text: `Stock insuficiente para ${producto.nombre}. Disponible: ${producto.stock}`,
         icon: "warning",
         customClass: {
-          confirmButton:
-            "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
+          confirmButton: "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
         },
         buttonsStyling: false,
       });
       return;
     }
 
-    let nuevosItems;
-    if (itemExistente) {
-      nuevosItems = items.map((item) =>
-        item.id === producto.id
-          ? {
-              ...item,
-              cantidad: item.cantidad + cantidad,
-              subtotal: (item.cantidad + cantidad) * item.precio,
-            }
-          : item
-      );
-    } else {
-      const subtotal = producto.precio * cantidad;
-      nuevosItems = [...items, { ...producto, cantidad, subtotal }];
-    }
+    const nuevosItems = itemExistente
+      ? items.map((item) =>
+          item.id === producto.id
+            ? {
+                ...item,
+                cantidad: item.cantidad + cantidad,
+                subtotal: (item.cantidad + cantidad) * item.precio,
+              }
+            : item
+        )
+      : [
+          ...items,
+          { ...producto, cantidad, subtotal: producto.precio * cantidad },
+        ];
 
     setItems(nuevosItems);
     setProductoId("");
+    setProductoSeleccionado(null);
     setCantidad(1);
     setBusquedaProducto("");
     setMensaje("");
@@ -100,12 +128,20 @@ const CrearVenta = () => {
           cantidad: item.cantidad,
         })),
       };
-      await api.post("/ventas", venta);
-      Swal.fire(
-        "Registro Exitoso!",
-        "Venta registrada exitosamente.",
-        "success"
-      );
+      await request({
+        method: "post",
+        url: "/ventas",
+        data: venta,
+      });
+      Swal.fire({
+        title: `Registro Exitoso!`,
+        text: `Venta registrada exitosamente.`,
+        icon: "success",
+        customClass: {
+          confirmButton: "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
+        },
+        buttonsStyling: false,
+      });
       setClienteId("");
       setBusquedaCliente("");
       setItems([]);
@@ -122,6 +158,17 @@ const CrearVenta = () => {
     const item = nuevosItems[index];
 
     if (operacion === "incrementar") {
+      if (item.cantidad + 1 > item.stock) {
+        Swal.fire({
+          text: `No hay suficiente stock para aumentar la cantidad de ${item.nombre}.`,
+          icon: "warning",
+          customClass: {
+            confirmButton: "bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700",
+          },
+          buttonsStyling: false,
+        });
+        return;
+      }
       item.cantidad += 1;
     } else if (operacion === "disminuir") {
       if (item.cantidad > 1) {
@@ -138,28 +185,35 @@ const CrearVenta = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <h2 className="text-2xl font-semibold mb-4">Crear Venta</h2>
-      {mensaje && <p className="mb-4 text-red-600">{mensaje}</p>}
+    <div className="max-w-5xl mx-auto p-6 bg-white rounded-lg shadow-lg">
+      <h2 className="text-3xl font-semibold mb-6 text-gray-800 border-b pb-2">
+        Crear Venta
+      </h2>
+      {mensaje && (
+        <p className="mb-4 text-red-600 bg-red-100 p-3 rounded border border-red-300">
+          {mensaje}
+        </p>
+      )}
 
-      {/* Buscar cliente */}
-      <div className="mb-2">
-        <label className="block mb-1">Buscar cliente:</label>
+      <div className="mb-6">
+        <label htmlFor="cliente" className="block mb-2 font-medium text-gray-700">
+          Buscar cliente:
+        </label>
         <input
+          id="cliente"
           list="clientesList"
           value={busquedaCliente}
           onChange={(e) => {
             const valor = e.target.value;
             setBusquedaCliente(valor);
             const cliente = clientes.find(
-              (c) =>
-                c.estado === 1 &&
-                `${c.nombre} (${c.identificacion})` === valor
+              (c) => c.estado === 1 && `${c.nombre} (${c.identificacion})` === valor
             );
             if (cliente) setClienteId(cliente.id);
+            else setClienteId("");
           }}
-          className="w-full border px-3 py-2 rounded"
           placeholder="Nombre o identificación"
+          className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
         />
         <datalist id="clientesList">
           {clientes
@@ -173,24 +227,31 @@ const CrearVenta = () => {
         </datalist>
       </div>
 
-      {/* Buscar producto */}
-      <div className="mb-4 flex gap-4">
-        <div className="mb-2">
-          <label className="block mb-1">Buscar producto:</label>
+      <div className="mb-8 grid grid-cols-12 gap-4 items-end">
+        <div className="col-span-7">
+          <label htmlFor="producto" className="block mb-2 font-medium text-gray-700">
+            Buscar producto:
+          </label>
           <input
+            id="producto"
             list="productosList"
             value={busquedaProducto}
             onChange={(e) => {
               const valor = e.target.value;
               setBusquedaProducto(valor);
               const producto = productos.find(
-                (p) =>
-                  p.estado === 1 && `${p.nombre} (${p.codigo})` === valor
+                (p) => p.estado === 1 && `${p.nombre} (${p.codigo})` === valor
               );
-              if (producto) setProductoId(producto.id);
+              if (producto) {
+                setProductoId(producto.id);
+                setProductoSeleccionado(producto);
+              } else {
+                setProductoId("");
+                setProductoSeleccionado(null);
+              }
             }}
-            className="w-full border px-3 py-2 rounded"
             placeholder="Nombre o código"
+            className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
           <datalist id="productosList">
             {productos
@@ -203,85 +264,128 @@ const CrearVenta = () => {
               ))}
           </datalist>
         </div>
-        <div>
-          <label className="block mb-1">Cantidad:</label>
+
+        <div className="col-span-3">
+          <label htmlFor="cantidad" className="block mb-2 font-medium text-gray-700">
+            Cantidad:
+          </label>
           <input
+            id="cantidad"
             type="number"
             min="1"
             value={cantidad}
-            onChange={(e) => setCantidad(parseInt(e.target.value))}
-            className="w-full border px-3 py-2 rounded"
+            onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
+            className="w-full border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
           />
         </div>
-        <div className="flex items-end mb-2">
+
+        <div className="col-span-2">
           <button
             onClick={agregarItem}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            disabled={!productoSeleccionado || cantidad <= 0}
+            className="w-full bg-indigo-600 text-white py-2 rounded-md shadow hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Agregar producto a la venta"
           >
             Agregar
           </button>
         </div>
       </div>
 
-      {/* Tabla de productos agregados */}
       {items.length > 0 && (
-        <table className="w-full bg-white rounded shadow border-collapse mb-4">
-          <thead>
-            <tr className="bg-gray-100 text-gray-700">
-              <th className="border px-4 py-2 text-left">Producto</th>
-              <th className="border px-4 py-2 text-right">Precio</th>
-              <th className="border px-4 py-2 text-center">Cantidad</th>
-              <th className="border px-4 py-2 text-right">Subtotal</th>
-              <th className="border px-4 py-2 text-center">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item, index) => (
-              <tr key={index} className="hover:bg-gray-50">
-                <td className="border px-4 py-2">{item.nombre}</td>
-                <td className="border px-4 py-2 text-right">
-                  ${item.precio.toLocaleString("es-CO")}
-                </td>
-                <td className="border px-4 py-2 text-center flex justify-center items-center gap-2">
-                  <button
-                    onClick={() => cambiarCantidad(index, "disminuir")}
-                    className="px-2 text-white bg-gray-500 rounded hover:bg-gray-600"
-                  >
-                    -
-                  </button>
-                  <span>{item.cantidad}</span>
-                  <button
-                    onClick={() => cambiarCantidad(index, "incrementar")}
-                    className="px-2 text-white bg-gray-500 rounded hover:bg-gray-600"
-                  >
-                    +
-                  </button>
-                </td>
-                <td className="border px-4 py-2 text-right">
-                  ${item.subtotal.toLocaleString("es-CO")}
-                </td>
-                <td className="border px-4 py-2 text-center">
-                  <button
-                    onClick={() => eliminarItem(index)}
-                    className="text-red-600 hover:underline"
-                  >
-                    Eliminar
-                  </button>
-                </td>
+        <div className="overflow-x-auto mb-6 rounded border border-gray-200 shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-sm font-semibold text-gray-700"
+                >
+                  Producto
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                >
+                  Precio
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-center text-sm font-semibold text-gray-700"
+                >
+                  Cantidad
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-right text-sm font-semibold text-gray-700"
+                >
+                  Subtotal
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-center text-sm font-semibold text-gray-700"
+                >
+                  Acciones
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {items.map((item, index) => (
+                <tr
+                  key={index}
+                  className="hover:bg-gray-50 transition-colors duration-150"
+                >
+                  <td className="px-6 py-3 whitespace-nowrap text-gray-800 font-medium">
+                    {item.nombre}
+                  </td>
+                  <td className="px-6 py-3 whitespace-nowrap text-right text-gray-700">
+                    ${item.precio.toLocaleString("es-CO")}
+                  </td>
+                  <td className="px-6 py-3 whitespace-nowrap text-center">
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        onClick={() => cambiarCantidad(index, "disminuir")}
+                        className="px-2 py-1 rounded-md bg-gray-300 hover:bg-gray-400 focus:outline-none"
+                        aria-label={`Disminuir cantidad de ${item.nombre}`}
+                      >
+                        –
+                      </button>
+                      <span className="px-3 font-semibold">{item.cantidad}</span>
+                      <button
+                        onClick={() => cambiarCantidad(index, "incrementar")}
+                        className="px-2 py-1 rounded-md bg-gray-300 hover:bg-gray-400 focus:outline-none"
+                        aria-label={`Incrementar cantidad de ${item.nombre}`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-6 py-3 whitespace-nowrap text-right text-gray-700">
+                    ${item.subtotal.toLocaleString("es-CO")}
+                  </td>
+                  <td className="px-6 py-3 whitespace-nowrap text-center">
+                    <button
+                      onClick={() => eliminarItem(index)}
+                      className="text-red-600 hover:underline font-medium"
+                      aria-label={`Eliminar ${item.nombre} de la venta`}
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* Total y guardar */}
-      <div className="mb-4 text-right">
-        <strong>Total: </strong>${total.toLocaleString("es-CO")}
-      </div>
-      <div className="text-right">
+      <div className="flex justify-end items-center gap-6">
+        <div className="text-xl font-semibold text-gray-800">
+          Total: ${total.toLocaleString("es-CO")}
+        </div>
         <button
           onClick={guardarVenta}
-          className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
+          className="bg-green-600 text-white px-6 py-3 rounded-md shadow hover:bg-green-700 transition"
+          aria-label="Guardar venta"
         >
           Guardar Venta
         </button>

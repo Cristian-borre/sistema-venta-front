@@ -2,60 +2,47 @@ import { Link, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 const MainLayout = () => {
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
 
   return (
-    <div className="flex min-h-screen bg-gray-50 text-gray-800">
-      <aside className="w-52 p-6 border-r border-gray-300 bg-white flex flex-col">
-        <h3 className="mb-8 font-semibold text-lg text-gray-700">Menú</h3>
-        <ul className="space-y-4 flex-grow">
-          <li>
-            <Link
-              to="/"
-              className="block px-3 py-2 rounded-md transition-colors duration-200 hover:bg-indigo-100 hover:text-indigo-700"
-            >
-              Dashboard
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/ventas"
-              className="block px-3 py-2 rounded-md transition-colors duration-200 hover:bg-indigo-100 hover:text-indigo-700"
-            >
-              Ventas
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/productos"
-              className="block px-3 py-2 rounded-md transition-colors duration-200 hover:bg-indigo-100 hover:text-indigo-700"
-            >
-              Productos
-            </Link>
-          </li>
-          <li>
-            <Link
-              to="/clientes"
-              className="block px-3 py-2 rounded-md transition-colors duration-200 hover:bg-indigo-100 hover:text-indigo-700"
-            >
-              Clientes
-            </Link>
-          </li>
-        </ul>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-100 via-white to-indigo-50 text-gray-800">
+      <aside className="w-60 min-h-screen bg-white/60 backdrop-blur-md shadow-md border-r border-gray-200 px-6 py-8 flex flex-col justify-between">
         <div>
-          <button
-            onClick={logout}
-            className="w-full text-left px-3 py-2 rounded-md text-gray-600 hover:bg-red-100 hover:text-red-700 transition-colors duration-200"
-          >
-            Cerrar sesión
-          </button>
+          <h3 className="text-2xl font-semibold text-indigo-600 mb-10 tracking-tight">
+            Menú
+          </h3>
+          <nav className="space-y-4">
+            <SidebarLink to="/" label="Dashboard" />
+            <SidebarLink to="/ventas" label="Ventas" />
+            <SidebarLink to="/productos" label="Productos" />
+            <SidebarLink to="/clientes" label="Clientes" />
+          </nav>
         </div>
+
+        <button
+          onClick={logout}
+          className="text-md text-red-500 hover:bg-red-50 hover:text-red-600 transition px-3 py-2 rounded-md"
+        >
+          Cerrar sesión
+        </button>
       </aside>
-      <main className="flex-1 p-8 bg-white shadow-inner">
-        <Outlet />
+
+      <main className="flex-1 px-10 py-8 bg-white/70 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
 };
+
+const SidebarLink = ({ to, label }) => (
+  <Link
+    to={to}
+    className="block text-gray-700 px-4 py-2 rounded-md text-md font-medium hover:bg-indigo-100 hover:text-indigo-700 transition-colors duration-200"
+  >
+    {label}
+  </Link>
+);
 
 export default MainLayout;
